@@ -18,7 +18,7 @@
 - [Vite](https://vite.dev) + TypeScript (서버 없음, 정적 사이트)
 - [chessground](https://github.com/lichess-org/chessground): Lichess 체스판 UI
 - [chessops](https://github.com/niklasf/chessops): 체스 규칙 및 수 판정
-- GitHub Pages 배포 (`npm run deploy` → `gh-pages` 브랜치)
+- GitHub Actions → GitHub Pages 자동 배포 (`main`에 push하면 검사·빌드·배포)
 
 ## 실행
 
@@ -27,7 +27,6 @@ npm install
 npm run dev      # 개발 서버
 npm run check    # 모든 퍼즐의 정답 수순이 통과하는지 검증
 npm run build    # dist/ 에 빌드
-npm run deploy   # 빌드 후 gh-pages 브랜치로 배포
 ```
 
 ## 퍼즐 데이터
