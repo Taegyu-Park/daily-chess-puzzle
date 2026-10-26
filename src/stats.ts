@@ -71,7 +71,21 @@ function save(records: Record<number, DayRecords>) {
 // Call once the puzzles are loaded, before reading any records.
 export function migrateRecords(legacyTier: (day: number) => Tier) {
   try {
-    if (localStorage.getItem(STORAGE_KEY)) return;
+    const current = read<Record<string, DayRecord>>(STORAGE_KEY);
+    if (current) {
+      // The first tiered build could read a stale cached puzzles.json and store
+      // migrated records under "undefined"; give them back to their tier.
+      let repaired = false;
+      for (const [d, byTier] of Object.entries(current)) {
+        for (const key of Object.keys(byTier).filter(k => !isTier(k))) {
+          byTier[legacyTier(Number(d))] ??= byTier[key];
+          delete byTier[key];
+          repaired = true;
+        }
+      }
+      if (repaired) save(current);
+      return;
+    }
     let old = read<DayRecord>(V2_KEY);
     if (!old) {
       // Renumber v1 records: the archive shifted day #1 back 28 days

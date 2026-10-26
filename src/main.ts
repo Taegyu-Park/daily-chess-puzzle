@@ -526,10 +526,14 @@ async function init() {
   setInterval(tickCountdown, 1000);
 
   try {
-    const res = await fetch(`${import.meta.env.BASE_URL}puzzles.json`);
+    // GitHub Pages lets browsers cache files for 10 minutes; always revalidate
+    // so the data matches this build after a deploy
+    const res = await fetch(`${import.meta.env.BASE_URL}puzzles.json`, { cache: 'no-cache' });
     days = await res.json();
+    // A puzzles.json from before tiers would break the page and the record migration
+    if (!isTier(days[0]?.legacy)) throw new Error('Outdated puzzles.json');
     // Explanations only cover some puzzles; the move list works without them
-    const ex = await fetch(`${import.meta.env.BASE_URL}explanations.json`).catch(() => undefined);
+    const ex = await fetch(`${import.meta.env.BASE_URL}explanations.json`, { cache: 'no-cache' }).catch(() => undefined);
     if (ex?.ok) explanations = await ex.json();
   } catch {
     setStatus('퍼즐을 불러오지 못했어요', '잠시 후 새로고침해 주세요.', 'bad');
