@@ -10,6 +10,7 @@
   --bad: #b5402f;
   --tag-bg: #e9f1ec;
   --tag-text: #2a5c42;
+  --cell: #f1ede4;
   color-scheme: light;
 }
 
@@ -26,6 +27,7 @@
     --bad: #ef7d6a;
     --tag-bg: #26372d;
     --tag-text: #a9d8bc;
+    --cell: #2b302d;
     color-scheme: dark;
   }
 }
@@ -59,7 +61,7 @@ body {
 }
 
 .top p {
-  margin: 2px 0 20px;
+  margin: 2px 0 0;
 }
 
 .muted {
@@ -228,4 +230,117 @@ footer a {
     width: 100%;
     max-width: 640px;
   }
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+
+.cal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.cal-head h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.cal-head span {
+  font-size: 0.8rem;
+}
+
+.calendar {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  text-align: center;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.calendar .wd {
+  color: var(--muted);
+  font-size: 0.72rem;
+  padding-bottom: 2px;
+}
+
+.calendar .day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--cell);
+}
+
+.calendar a.day:hover {
+  border-color: var(--accent);
+}
+
+.calendar .day.off {
+  background: none;
+  color: var(--border);
+}
+
+.calendar .day.solved {
+  background: var(--good);
+  color: var(--accent-text);
+}
+
+.calendar .day.failed {
+  background: var(--bad);
+  color: var(--accent-text);
+}
+
+.calendar .day.started {
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.calendar .day.today {
+  font-weight: 700;
+}
+
+.calendar .day.selected {
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+
+.legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 0.75rem;
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+.dot.solved {
+  background: var(--good);
+}
+
+.dot.failed {
+  background: var(--bad);
+}
+
+.dot.started {
+  background: var(--cell);
+  box-shadow: inset 0 -3px 0 var(--accent);
 }
