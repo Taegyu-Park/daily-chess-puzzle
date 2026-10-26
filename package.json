@@ -1,0 +1,23 @@
+{
+  "name": "daily-chess-puzzle",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "puzzles": "node scripts/build-puzzles.mjs",
+    "check": "node scripts/check-puzzles.ts",
+    "deploy": "sh scripts/deploy.sh"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3",
+    "vite": "^8.3.4"
+  },
+  "dependencies": {
+    "chessground": "^9.2.1",
+    "chessops": "^0.15.1"
+  },
+  "license": "GPL-3.0-or-later"
+}
