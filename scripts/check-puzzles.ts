@@ -1,9 +1,10 @@
 // Plays every puzzle in public/puzzles.json through the Puzzle class to make
 // sure each stored solution is accepted. Run: node scripts/check-puzzles.ts
 import { readFileSync } from 'node:fs';
-import { Puzzle, type PuzzleData } from '../src/puzzle.ts';
+import { Puzzle, TIERS, type DayPuzzles } from '../src/puzzle.ts';
 
-const puzzles: PuzzleData[] = JSON.parse(readFileSync('public/puzzles.json', 'utf8'));
+const days: DayPuzzles[] = JSON.parse(readFileSync('public/puzzles.json', 'utf8'));
+const puzzles = days.flatMap(d => TIERS.map(t => d[t]));
 let failed = 0;
 for (const data of puzzles) {
   const p = new Puzzle(data);

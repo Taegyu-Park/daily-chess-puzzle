@@ -12,6 +12,15 @@ export interface PuzzleData {
   themes: string[];
 }
 
+export const TIERS = ['easy', 'medium', 'hard'] as const;
+export type Tier = (typeof TIERS)[number];
+export const isTier = (t: unknown): t is Tier => (TIERS as readonly unknown[]).includes(t);
+
+// One day's entry in public/puzzles.json: a puzzle for each tier
+export type DayPuzzles = Record<Tier, PuzzleData> & {
+  legacy: Tier; // tier of the day's only puzzle from before tiers existed
+};
+
 export type MoveResult = 'wrong' | 'correct' | 'solved';
 
 // Tracks progress through one puzzle. Lichess puzzles start one ply before

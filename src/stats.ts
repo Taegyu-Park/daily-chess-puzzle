@@ -1,9 +1,12 @@
-// Daily puzzle numbering and per-day results, kept in localStorage.
+// Daily puzzle numbering and per-puzzle results, kept in localStorage.
+import { isTier, TIERS, type Tier } from './puzzle.ts';
 
 const EPOCH = Date.UTC(2026, 8, 28); // puzzle #1
 const DAY = 86_400_000;
-const STORAGE_KEY = 'daily-chess-puzzle:v2';
-const LEGACY_KEY = 'daily-chess-puzzle:v1'; // numbered from 2026-10-26, 28 days later
+const STORAGE_KEY = 'daily-chess-puzzle:v3';
+const V2_KEY = 'daily-chess-puzzle:v2'; // one record per day, before tiers
+const V1_KEY = 'daily-chess-puzzle:v1'; // like v2 but numbered from 2026-10-26, 28 days later
+const TIER_KEY = 'daily-chess-puzzle:tier';
 
 // The site launched on day #29 (2026-10-26) with puzzles.json[0]; the 28 days
 // before it were added later for the archive and take puzzles from the end of the list.
@@ -20,6 +23,8 @@ export interface DayRecord {
   hints: number;
   late?: boolean; // finished on a later date from the archive; doesn't count toward streaks
 }
+
+export type DayRecords = Partial<Record<Tier, DayRecord>>;
 
 // Day numbers use the viewer's local calendar date, so the puzzle changes at local midnight.
 export function dayNumber(date = new Date()): number {
@@ -41,27 +46,20 @@ export function msUntilNextDay(now = new Date()): number {
   return next.getTime() - now.getTime();
 }
 
-function read(key: string): Record<number, DayRecord> | undefined {
+function read<T>(key: string): Record<number, T> | undefined {
   const raw = localStorage.getItem(key);
   return raw ? JSON.parse(raw) : undefined;
 }
 
-function load(): Record<number, DayRecord> {
+function load(): Record<number, DayRecords> {
   try {
-    const records = read(STORAGE_KEY);
-    if (records) return records;
-    // Renumber records saved before the archive shifted day #1 back 28 days
-    const legacy = read(LEGACY_KEY) ?? {};
-    const migrated = Object.fromEntries(Object.entries(legacy).map(([d, r]) => [Number(d) + LAUNCH_DAY - 1, r]));
-    save(migrated);
-    localStorage.removeItem(LEGACY_KEY);
-    return migrated;
+    return read<DayRecords>(STORAGE_KEY) ?? {};
   } catch {
     return {};
   }
 }
 
-function save(records: Record<number, DayRecord>) {
+function save(records: Record<number, DayRecords>) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
   } catch {
@@ -69,18 +67,56 @@ function save(records: Record<number, DayRecord>) {
   }
 }
 
-export function getRecord(day: number): DayRecord {
-  return load()[day] ?? { status: 'playing', mistakes: 0, hints: 0 };
+// Moves records saved before tiers to the tier that held that day's puzzle.
+// Call once the puzzles are loaded, before reading any records.
+export function migrateRecords(legacyTier: (day: number) => Tier) {
+  try {
+    if (localStorage.getItem(STORAGE_KEY)) return;
+    let old = read<DayRecord>(V2_KEY);
+    if (!old) {
+      // Renumber v1 records: the archive shifted day #1 back 28 days
+      const v1 = read<DayRecord>(V1_KEY) ?? {};
+      old = Object.fromEntries(Object.entries(v1).map(([d, r]) => [Number(d) + LAUNCH_DAY - 1, r]));
+    }
+    save(Object.fromEntries(Object.entries(old).map(([d, r]) => [d, { [legacyTier(Number(d))]: r }])));
+    localStorage.removeItem(V2_KEY);
+    localStorage.removeItem(V1_KEY);
+  } catch {
+    // Storage unavailable: nothing to migrate
+  }
 }
 
-export function getAllRecords(): Record<number, DayRecord> {
+export function getRecord(day: number, tier: Tier): DayRecord {
+  return load()[day]?.[tier] ?? { status: 'playing', mistakes: 0, hints: 0 };
+}
+
+export function getAllRecords(): Record<number, DayRecords> {
   return load();
 }
 
-export function setRecord(day: number, record: DayRecord) {
+export function setRecord(day: number, tier: Tier, record: DayRecord) {
   const records = load();
-  records[day] = record;
+  records[day] = { ...records[day], [tier]: record };
   save(records);
+}
+
+// The tier the viewer picked last, used when a link doesn't name one
+export function preferredTier(): Tier {
+  try {
+    const tier = localStorage.getItem(TIER_KEY);
+    if (isTier(tier)) return tier;
+  } catch {
+    // Storage unavailable: fall back to the default
+  }
+  return 'medium';
+}
+
+export function setPreferredTier(tier: Tier) {
+  try {
+    localStorage.setItem(TIER_KEY, tier);
+  } catch {
+    // Storage unavailable: the choice just isn't remembered
+  }
 }
 
 export interface Summary {
@@ -93,10 +129,9 @@ export interface Summary {
 export function summary(today: number): Summary {
   const records = load();
   const days = Object.keys(records).map(Number);
-  const isFinished = (d: number) => records[d] !== undefined && records[d].status !== 'playing';
-  const isSolved = (d: number) => records[d]?.status === 'solved';
-  // Streaks only count puzzles solved on their own day
-  const onTime = (d: number) => isSolved(d) && !records[d].late;
+  const all = Object.values(records).flatMap(r => TIERS.map(t => r[t]).filter(r => r !== undefined));
+  // A day keeps the streak going if any tier was solved on that day
+  const onTime = (d: number) => TIERS.some(t => records[d]?.[t]?.status === 'solved' && !records[d][t].late);
 
   // Current streak may end today or yesterday (today not yet played)
   let streak = 0;
@@ -110,8 +145,8 @@ export function summary(today: number): Summary {
   }
 
   return {
-    played: days.filter(isFinished).length,
-    solved: days.filter(isSolved).length,
+    played: all.filter(r => r.status !== 'playing').length,
+    solved: all.filter(r => r.status === 'solved').length,
     streak,
     bestStreak,
   };

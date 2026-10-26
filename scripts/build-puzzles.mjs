@@ -1,5 +1,6 @@
-// Builds public/puzzles.json from the Lichess puzzle database (CC0).
-// Usage: node scripts/build-puzzles.mjs [count]
+// Builds public/puzzles.json from the Lichess puzzle database (CC0): an easy,
+// a medium and a hard puzzle for each day.
+// Usage: node scripts/build-puzzles.mjs [days]
 // Downloads data/lichess_db_puzzle.csv.zst on first run, then streams it.
 import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -10,7 +11,7 @@ import { createZstdDecompress } from 'node:zlib';
 const URL = 'https://database.lichess.org/lichess_db_puzzle.csv.zst';
 const SRC = 'data/lichess_db_puzzle.csv.zst';
 const OUT = 'public/puzzles.json';
-const COUNT = Number(process.argv[2] ?? 1095); // 3 years of daily puzzles
+const COUNT = Number(process.argv[2] ?? 1095); // 3 years of days
 
 // Quality filters
 const MIN_POPULARITY = 90;
@@ -18,6 +19,11 @@ const MIN_PLAYS = 2000;
 const MAX_DEVIATION = 80;
 const MIN_RATING = 1000;
 const MAX_RATING = 2400;
+
+// Tiers line up with the difficulty bands in src/main.ts: easy is 매우 쉬움 +
+// 쉬움, medium is 중간, hard is 어려움 + 매우 어려움
+const TIERS = ['easy', 'medium', 'hard'];
+const tierOf = rating => (rating < 1600 ? 'easy' : rating < 1900 ? 'medium' : 'hard');
 
 if (!existsSync(SRC)) {
   mkdirSync('data', { recursive: true });
@@ -84,9 +90,23 @@ for await (const line of lines) {
 }
 console.log(`Scanned ${total - 1} puzzles, ${candidates.length} candidates`);
 // readline ends quietly on a decompression error, so guard against a truncated scan
-if (candidates.length < COUNT) throw new Error(`Only ${candidates.length} candidates, need ${COUNT}`);
+if (candidates.length < COUNT * 3) throw new Error(`Only ${candidates.length} candidates, need ${COUNT * 3}`);
 
 candidates.sort((a, b) => hash(a.id) - hash(b.id));
-const picked = candidates.slice(0, COUNT);
-writeFileSync(OUT, JSON.stringify(picked));
-console.log(`Wrote ${picked.length} puzzles to ${OUT}`);
+// Before tiers there was one puzzle a day: the first COUNT candidates. Each one
+// stays on its day in its own tier, so old records, links and explanations
+// still match; the other two tiers are filled from the remaining candidates.
+const spare = Object.fromEntries(TIERS.map(t => [t, []]));
+for (const c of candidates.slice(COUNT)) spare[tierOf(c.rating)].push(c);
+const used = Object.fromEntries(TIERS.map(t => [t, 0]));
+const days = candidates.slice(0, COUNT).map(original => {
+  const legacy = tierOf(original.rating);
+  const day = { legacy };
+  for (const t of TIERS) {
+    day[t] = t === legacy ? original : spare[t][used[t]++];
+    if (!day[t]) throw new Error(`Ran out of ${t} puzzles`);
+  }
+  return day;
+});
+writeFileSync(OUT, JSON.stringify(days));
+console.log(`Wrote ${days.length} days (${days.length * 3} puzzles) to ${OUT}`);

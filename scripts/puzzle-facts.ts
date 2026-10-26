@@ -1,4 +1,4 @@
-// Prints verified facts about the puzzles for a range of days, as material for
+// Prints verified facts about the puzzles (all three tiers) for a range of days, as material for
 // writing the explanations in public/explanations.json.
 // Usage: node scripts/puzzle-facts.ts <fromDay> <toDay> [--missing]
 //   --missing  skip puzzles that already have an explanation
@@ -8,11 +8,11 @@ import { makeFen, parseFen } from 'chessops/fen';
 import { parseUci } from 'chessops/util';
 import { analyze } from '../src/analysis.ts';
 import { dateOfDay, puzzleIndex } from '../src/stats.ts';
-import type { PuzzleData } from '../src/puzzle.ts';
+import { TIERS, type DayPuzzles } from '../src/puzzle.ts';
 
 const [from, to] = process.argv.slice(2, 4).map(Number);
 const missingOnly = process.argv.includes('--missing');
-const puzzles: PuzzleData[] = JSON.parse(readFileSync('public/puzzles.json', 'utf8'));
+const days: DayPuzzles[] = JSON.parse(readFileSync('public/puzzles.json', 'utf8'));
 const explanations: Record<string, string> = existsSync('public/explanations.json')
   ? JSON.parse(readFileSync('public/explanations.json', 'utf8'))
   : {};
@@ -33,14 +33,14 @@ function diagram(pos: Chess): string {
   return rows.join('\n');
 }
 
-for (let day = from; day <= to; day++) {
-  const p = puzzles[puzzleIndex(day, puzzles.length)];
+for (let day = from; day <= to; day++) for (const tier of TIERS) {
+  const p = days[puzzleIndex(day, days.length)][tier];
   if (missingOnly && explanations[p.id]) continue;
   const pos = Chess.fromSetup(parseFen(p.fen).unwrap()).unwrap();
   pos.play(parseUci(p.moves.split(' ')[0])!);
   const a = analyze(p.fen, p.moves);
   const side = pos.turn === 'white' ? '백' : '흑';
-  console.log(`=== day #${day} (${dateOfDay(day).toLocaleDateString('sv-SE')}) id=${p.id} rating=${p.rating}`);
+  console.log(`=== day #${day} ${tier} (${dateOfDay(day).toLocaleDateString('sv-SE')}) id=${p.id} rating=${p.rating}`);
   console.log(`themes: ${p.themes.join(', ')}`);
   console.log(`player: ${side} (${pos.turn}) to move`);
   console.log(`FEN (player to move): ${makeFen(pos.toSetup())}`);

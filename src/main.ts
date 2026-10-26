@@ -10,15 +10,18 @@ import { chessgroundDests, chessgroundMove } from 'chessops/compat';
 import { makeSquare, parseSquare, squareRank } from 'chessops/util';
 import type { NormalMove } from 'chessops/types';
 import { analyze } from './analysis.ts';
-import { Puzzle, type PuzzleData } from './puzzle.ts';
+import { Puzzle, isTier, TIERS, type DayPuzzles, type Tier } from './puzzle.ts';
 import {
   ARCHIVE_DAYS,
   dateOfDay,
   dayNumber,
   getAllRecords,
   getRecord,
+  migrateRecords,
   msUntilNextDay,
+  preferredTier,
   puzzleIndex,
+  setPreferredTier,
   setRecord,
   summary,
   type DayRecord,
@@ -53,6 +56,17 @@ const DIFFICULTIES: [number, string][] = [
 
 const difficulty = (rating: number) => DIFFICULTIES.find(([max]) => rating < max)![1];
 
+// Each day has one puzzle per tier (see scripts/build-puzzles.mjs for the rating ranges)
+const TIER_NAMES: Record<Tier, string> = { easy: '쉬움', medium: '중간', hard: '어려움' };
+const PROGRESS_NAMES = { solved: '해결', failed: '실패', started: '진행 중' };
+type Progress = keyof typeof PROGRESS_NAMES;
+
+// How far the viewer got on one puzzle; undefined if never opened
+function progress(r: DayRecord | undefined): Progress | undefined {
+  if (!r) return;
+  return r.status === 'playing' ? 'started' : r.status;
+}
+
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
   <header class="top">
@@ -68,6 +82,7 @@ app.innerHTML = `
       <section id="explain" class="card explain" hidden></section>
     </div>
     <aside class="panel">
+      <nav id="tiers" class="tiers" aria-label="난도"></nav>
       <section class="card status-card">
         <p id="status" class="status"></p>
         <p id="detail" class="muted"></p>
@@ -95,6 +110,7 @@ app.innerHTML = `
           <span><i class="dot solved"></i>해결</span>
           <span><i class="dot failed"></i>실패</span>
           <span><i class="dot started"></i>진행 중</span>
+          <span>점 순서: 쉬움 · 중간 · 어려움</span>
         </div>
       </section>
       <section class="card">
@@ -122,9 +138,10 @@ const calendarEl = $('calendar');
 
 const today = dayNumber();
 const firstDay = today - ARCHIVE_DAYS;
-let puzzles: PuzzleData[];
+let days: DayPuzzles[];
 let explanations: Record<string, string> = {}; // puzzle id → written explanation (optional)
 let day = today; // the puzzle being shown
+let tier: Tier;
 let record: DayRecord;
 let puzzle: Puzzle;
 let cg: Api;
@@ -147,9 +164,10 @@ function setStatus(status: string, detail = '', tone: 'good' | 'bad' | '' = '') 
 }
 
 function save() {
-  setRecord(day, record);
+  setRecord(day, tier, record);
   renderStats();
   renderCalendar();
+  renderTiers();
 }
 
 // Push the puzzle position to the board; the player may move only when it is their turn.
@@ -261,7 +279,13 @@ function renderResult() {
     const clean = record.mistakes === 0 && record.hints === 0;
     setStatus(clean ? '완벽해요! 🎉' : '해결했어요! ✅', `실수 ${record.mistakes}회 · 힌트 ${record.hints}회`, 'good');
   } else if (record.status === 'failed') {
-    setStatus('정답을 확인했어요', day === today ? '내일 퍼즐에 다시 도전해보세요.' : '달력에서 다른 퍼즐에 도전해보세요.', 'bad');
+    const othersLeft = TIERS.some(t => getRecord(day, t).status === 'playing');
+    const next = othersLeft
+      ? '다른 난도에도 도전해보세요.'
+      : day === today
+        ? '내일 퍼즐에 다시 도전해보세요.'
+        : '달력에서 다른 퍼즐에 도전해보세요.';
+    setStatus('정답을 확인했어요', next, 'bad');
   }
   renderButtons();
   renderInfo();
@@ -288,6 +312,18 @@ function renderHeader() {
   $('to-today').hidden = day === today;
 }
 
+// One tab per tier, showing how far the viewer got on each
+function renderTiers() {
+  const records = getAllRecords()[day];
+  $('tiers').innerHTML = TIERS.map(t => {
+    const state = progress(records?.[t]);
+    const current = t === tier ? ' aria-current="true"' : '';
+    return `<a class="tier ${state ?? ''}" href="#${day}-${t}"${current}>
+      <span>${TIER_NAMES[t]}</span><small>${state ? PROGRESS_NAMES[state] : '도전 전'}</small>
+    </a>`;
+  }).join('');
+}
+
 function renderStats() {
   const s = summary(today);
   $('s-played').textContent = String(s.played);
@@ -309,11 +345,15 @@ function renderCalendar() {
       html += `<span class="day off">${label}</span>`;
       continue;
     }
-    const r = records[d];
-    const state = r?.status === 'solved' ? 'solved' : r?.status === 'failed' ? 'failed' : r ? 'started' : '';
-    const classes = ['day', state, d === day ? 'selected' : '', d === today ? 'today' : ''].join(' ');
-    const title = `#${d} · ${date.toLocaleDateString('ko-KR')}`;
-    html += `<a class="${classes}" href="#${d}" title="${title}">${label}</a>`;
+    const states = TIERS.map(t => progress(records[d]?.[t]));
+    const classes = ['day', d === day ? 'selected' : '', d === today ? 'today' : ''].join(' ');
+    const title = [`#${d} · ${date.toLocaleDateString('ko-KR')}`];
+    TIERS.forEach((t, i) => {
+      const s = states[i];
+      if (s) title.push(`${TIER_NAMES[t]} ${PROGRESS_NAMES[s]}`);
+    });
+    const pips = states.map(s => `<i class="pip ${s ?? ''}"></i>`).join('');
+    html += `<a class="${classes}" href="#${d}-${tier}" title="${title.join(' · ')}"><span>${label}</span><span class="pips">${pips}</span></a>`;
   }
   calendarEl.innerHTML = html;
 }
@@ -326,17 +366,25 @@ function tickCountdown() {
   $('countdown').textContent = `${pad(Math.floor(t / 3600))}:${pad(Math.floor((t % 3600) / 60))}:${pad(t % 60)}`;
 }
 
-// Day from the URL hash (#29), limited to the archive range; anything else means today
-function dayFromHash(): number {
-  const d = Number(location.hash.slice(1));
-  return Number.isInteger(d) && d >= firstDay && d <= today ? d : today;
+const puzzlesOf = (d: number) => days[puzzleIndex(d, days.length)];
+
+// Day and tier from the URL hash (#29-hard). The day is limited to the archive
+// range; anything else means today. Links from before tiers (#29) open the
+// day's original puzzle, and with no hash the tier the viewer picked last.
+function fromHash(): [number, Tier] {
+  const [num, t] = location.hash.slice(1).split('-');
+  const n = Number(num);
+  const d = num && Number.isInteger(n) && n >= firstDay && n <= today ? n : today;
+  return [d, isTier(t) ? t : num ? puzzlesOf(d).legacy : preferredTier()];
 }
 
-function openPuzzle(d: number) {
+function openPuzzle(d: number, t: Tier) {
   generation++;
   day = d;
-  record = getRecord(d);
-  puzzle = new Puzzle(puzzles[puzzleIndex(d, puzzles.length)]);
+  tier = t;
+  setPreferredTier(t);
+  record = getRecord(d, t);
+  puzzle = new Puzzle(puzzlesOf(d)[t]);
   hintLevel = 0;
   busy = false;
   lichessLink.href = `https://lichess.org/training/${puzzle.data.id}`;
@@ -345,6 +393,7 @@ function openPuzzle(d: number) {
   renderButtons();
   renderInfo();
   renderCalendar();
+  renderTiers();
 
   cg.set({
     fen: puzzle.startFen,
@@ -383,8 +432,8 @@ hintBtn.addEventListener('click', () => {
 
 revealBtn.addEventListener('click', () => {
   if (busy || record.status !== 'playing') return;
-  const warning = day === today ? '정답을 보면 오늘 퍼즐은 실패로 기록되고 연속 기록이 끊겨요.' : '정답을 보면 이 퍼즐은 실패로 기록돼요.';
-  if (!confirm(`${warning} 계속할까요?`)) return;
+  const streakNote = day === today ? ' 오늘 다른 난도를 풀면 연속 기록은 이어져요.' : '';
+  if (!confirm(`정답을 보면 이 퍼즐은 실패로 기록돼요.${streakNote} 계속할까요?`)) return;
   record.status = 'failed';
   if (day !== dayNumber()) record.late = true;
   save();
@@ -408,9 +457,9 @@ shareBtn.addEventListener('click', async () => {
     record.status === 'solved'
       ? `✅ 해결 (실수 ${record.mistakes} · 힌트 ${record.hints})`
       : '❌ 정답 확인';
-  const lines = [`♟️ Daily Chess Puzzle #${day}`, result];
+  const lines = [`♟️ Daily Chess Puzzle #${day} · ${TIER_NAMES[tier]}`, result];
   if (day === today) lines.push(`🔥 연속 ${s.streak}일`);
-  lines.push(`${location.href.split('#')[0]}#${day}`);
+  lines.push(`${location.href.split('#')[0]}#${day}-${tier}`);
   try {
     await navigator.clipboard.writeText(lines.join('\n'));
     shareBtn.textContent = '복사됨!';
@@ -423,19 +472,18 @@ shareBtn.addEventListener('click', async () => {
 $('to-today').addEventListener('click', e => {
   e.preventDefault();
   history.pushState(null, '', location.pathname + location.search);
-  openPuzzle(today);
+  openPuzzle(today, tier);
 });
 
-window.addEventListener('hashchange', () => openPuzzle(dayFromHash()));
+window.addEventListener('hashchange', () => openPuzzle(...fromHash()));
 
 async function init() {
-  renderStats();
   tickCountdown();
   setInterval(tickCountdown, 1000);
 
   try {
     const res = await fetch(`${import.meta.env.BASE_URL}puzzles.json`);
-    puzzles = await res.json();
+    days = await res.json();
     // Explanations only cover some puzzles; the move list works without them
     const ex = await fetch(`${import.meta.env.BASE_URL}explanations.json`).catch(() => undefined);
     if (ex?.ok) explanations = await ex.json();
@@ -443,6 +491,8 @@ async function init() {
     setStatus('퍼즐을 불러오지 못했어요', '잠시 후 새로고침해 주세요.', 'bad');
     return;
   }
+  migrateRecords(d => puzzlesOf(d).legacy);
+  renderStats();
 
   cg = Chessground($('board'), {
     coordinates: true,
@@ -451,7 +501,7 @@ async function init() {
     animation: { enabled: true, duration: 250 },
     drawable: { enabled: true },
   });
-  openPuzzle(dayFromHash());
+  openPuzzle(...fromHash());
 }
 
 init();
