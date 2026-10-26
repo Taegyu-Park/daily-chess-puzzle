@@ -460,6 +460,23 @@ footer a {
   font-style: italic;
 }
 
+.moves li {
+  cursor: pointer;
+}
+
+.moves li:hover {
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.moves li.current {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  color: var(--text);
+}
+
+.review-tip {
+  margin: 8px 0 0;
+  font-size: 0.75rem;
+}
 
 .moves .mv {
   font-weight: 600;

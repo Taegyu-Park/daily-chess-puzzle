@@ -7,6 +7,7 @@ import { Chessground } from 'chessground';
 import type { Api } from 'chessground/api';
 import type { Key } from 'chessground/types';
 import { chessgroundDests, chessgroundMove } from 'chessops/compat';
+import { makeFen } from 'chessops/fen';
 import { makeSquare, parseSquare, squareRank } from 'chessops/util';
 import type { NormalMove } from 'chessops/types';
 import { analyze } from './analysis.ts';
@@ -148,6 +149,7 @@ let cg: Api;
 let hintLevel = 0; // 0: none, 1: piece highlighted, 2: arrow shown
 let busy = false; // true while the opponent is replying
 let generation = 0; // bumped on every puzzle switch so stale timers do nothing
+let viewPly: number | undefined; // solution move being reviewed after the puzzle; undefined: live board
 
 const colorName = (c: string) => (c === 'white' ? '백' : '흑');
 
@@ -185,6 +187,29 @@ function sync() {
     },
   });
   cg.setAutoShapes(hintShapes());
+}
+
+// Shows the position after `ply` moves of the solution, for reviewing a finished puzzle
+function showPly(ply: number) {
+  if (record.status === 'playing' || busy) return;
+  viewPly = Math.max(0, Math.min(ply, puzzle.solution.length));
+  const pos = puzzle.positionAt(viewPly);
+  const last = puzzle.solution[viewPly - 1];
+  cg.set({
+    fen: makeFen(pos.toSetup()),
+    turnColor: pos.turn,
+    lastMove: last ? (chessgroundMove(last) as Key[]) : undefined,
+    check: pos.isCheck() ? pos.turn : false,
+    movable: { color: undefined, dests: new Map() },
+  });
+  cg.setAutoShapes([]);
+  highlightPly();
+}
+
+function highlightPly() {
+  for (const li of $('explain').querySelectorAll<HTMLElement>('.moves li')) {
+    li.classList.toggle('current', Number(li.dataset.ply) === viewPly);
+  }
 }
 
 function hintShapes() {
@@ -256,9 +281,9 @@ function renderExplanation() {
   const a = analyze(puzzle.data.fen, puzzle.data.moves);
   const text = explanations[puzzle.data.id];
   const rows = a.moves
-    .map(m => {
+    .map((m, i) => {
       const cls = m.setup ? 'setup' : m.byPlayer ? 'mine' : '';
-      return `<li class="${cls}"><span class="mv">${m.moveNumber} ${m.san}</span><span>${m.notes.join(' · ')}</span></li>`;
+      return `<li class="${cls}" data-ply="${i + 1}"><span class="mv">${m.moveNumber} ${m.san}</span><span>${m.notes.join(' · ')}</span></li>`;
     })
     .join('');
   const outcome = a.mate
@@ -271,7 +296,9 @@ function renderExplanation() {
     ${text ? `<p class="idea">${text}</p>` : ''}
     <ol class="moves">${rows}</ol>
     <p class="outcome">결과: <strong>${outcome}</strong> <span class="muted">(폰 1 · 나이트/비숍 3 · 룩 5 · 퀸 9)</span></p>
+    <p class="review-tip muted">수를 누르거나 ← → 키로 수순을 앞뒤로 볼 수 있어요.</p>
   `;
+  highlightPly();
 }
 
 function renderResult() {
@@ -387,6 +414,7 @@ function openPuzzle(d: number, t: Tier) {
   puzzle = new Puzzle(puzzlesOf(d)[t]);
   hintLevel = 0;
   busy = false;
+  viewPly = undefined;
   lichessLink.href = `https://lichess.org/training/${puzzle.data.id}`;
 
   renderHeader();
@@ -449,6 +477,22 @@ revealBtn.addEventListener('click', () => {
     later(step, 700);
   };
   step();
+});
+
+$('explain').addEventListener('click', e => {
+  const li = (e.target as HTMLElement).closest<HTMLElement>('.moves li');
+  if (li) showPly(Number(li.dataset.ply));
+});
+
+// ← → step through a finished puzzle's solution; ↑/Home and ↓/End jump to either end
+document.addEventListener('keydown', e => {
+  if (!puzzle || record.status === 'playing' || busy || e.altKey || e.ctrlKey || e.metaKey) return;
+  const at = viewPly ?? puzzle.step;
+  const end = puzzle.solution.length;
+  const targets: Record<string, number> = { ArrowLeft: at - 1, ArrowRight: at + 1, ArrowUp: 0, Home: 0, ArrowDown: end, End: end };
+  if (!(e.key in targets)) return;
+  e.preventDefault();
+  showPly(targets[e.key]);
 });
 
 shareBtn.addEventListener('click', async () => {

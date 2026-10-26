@@ -76,6 +76,13 @@ export class Puzzle {
     return this.isDone ? 'solved' : 'correct';
   }
 
+  // Position after the first `ply` moves of the solution (0: before the setup move)
+  positionAt(ply: number): Chess {
+    const pos = Chess.fromSetup(parseFen(this.startFen).unwrap()).unwrap();
+    for (const move of this.solution.slice(0, ply)) pos.play(move);
+    return pos;
+  }
+
   // Plays the next solution move (opponent replies and "show solution").
   playNext(): NormalMove | undefined {
     const move = this.expected;
