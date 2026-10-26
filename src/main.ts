@@ -9,6 +9,7 @@ import type { Key } from 'chessground/types';
 import { chessgroundDests, chessgroundMove } from 'chessops/compat';
 import { makeSquare, parseSquare, squareRank } from 'chessops/util';
 import type { NormalMove } from 'chessops/types';
+import { analyze } from './analysis.ts';
 import { Puzzle, type PuzzleData } from './puzzle.ts';
 import {
   ARCHIVE_DAYS,
@@ -62,7 +63,10 @@ app.innerHTML = `
     <a id="to-today" class="link" href="#" hidden>오늘 퍼즐로 →</a>
   </header>
   <main class="layout">
-    <div class="board-col"><div id="board" class="board"></div></div>
+    <div class="board-col">
+      <div id="board" class="board"></div>
+      <section id="explain" class="card explain" hidden></section>
+    </div>
     <aside class="panel">
       <section class="card status-card">
         <p id="status" class="status"></p>
@@ -119,6 +123,7 @@ const calendarEl = $('calendar');
 const today = dayNumber();
 const firstDay = today - ARCHIVE_DAYS;
 let puzzles: PuzzleData[];
+let explanations: Record<string, string> = {}; // puzzle id → written explanation (optional)
 let day = today; // the puzzle being shown
 let record: DayRecord;
 let puzzle: Puzzle;
@@ -222,6 +227,33 @@ function renderButtons() {
   revealBtn.hidden = done;
   shareBtn.hidden = !done;
   lichessLink.hidden = !done;
+  renderExplanation();
+}
+
+// Move-by-move breakdown plus the written explanation, once the puzzle is over
+function renderExplanation() {
+  const el = $('explain');
+  el.hidden = record.status === 'playing';
+  if (el.hidden) return;
+  const a = analyze(puzzle.data.fen, puzzle.data.moves);
+  const text = explanations[puzzle.data.id];
+  const rows = a.moves
+    .map(m => {
+      const cls = m.setup ? 'setup' : m.byPlayer ? 'mine' : '';
+      return `<li class="${cls}"><span class="mv">${m.moveNumber} ${m.san}</span><span>${m.notes.join(' · ')}</span></li>`;
+    })
+    .join('');
+  const outcome = a.mate
+    ? '체크메이트로 승리'
+    : a.materialGain > 0
+      ? `기물 ${a.materialGain}점 이득`
+      : '포지션 우위 확보';
+  el.innerHTML = `
+    <h2>해설</h2>
+    ${text ? `<p class="idea">${text}</p>` : ''}
+    <ol class="moves">${rows}</ol>
+    <p class="outcome">결과: <strong>${outcome}</strong> <span class="muted">(폰 1 · 나이트/비숍 3 · 룩 5 · 퀸 9)</span></p>
+  `;
 }
 
 function renderResult() {
@@ -404,6 +436,9 @@ async function init() {
   try {
     const res = await fetch(`${import.meta.env.BASE_URL}puzzles.json`);
     puzzles = await res.json();
+    // Explanations only cover some puzzles; the move list works without them
+    const ex = await fetch(`${import.meta.env.BASE_URL}explanations.json`).catch(() => undefined);
+    if (ex?.ok) explanations = await ex.json();
   } catch {
     setStatus('퍼즐을 불러오지 못했어요', '잠시 후 새로고침해 주세요.', 'bad');
     return;

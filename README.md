@@ -11,6 +11,7 @@
 - 힌트 2단계 (움직일 기물 → 화살표), 정답 보기
 - 퍼즐 달력: 최근 4주(28일) 지난 퍼즐 풀기, 날짜별 해결·실패·진행 중 표시, `#번호` 링크로 바로 열기
 - 플레이 수 · 성공률 · 연속 / 최고 연속 기록 (브라우저 localStorage, 연속 기록은 당일에 푼 퍼즐만 인정)
+- 퍼즐을 마치면 해설 표시: 수순별 설명(잡은 기물·체크·메이트 등 자동 계산) + 핵심 아이디어 해설(`public/explanations.json`)
 - Wordle 스타일 결과 공유, Lichess 분석 링크
 
 ## 기술 스택
@@ -40,3 +41,13 @@ npm run build    # dist/ 에 빌드
 
 - 퍼즐 데이터: CC0 (Lichess)
 - chessground: GPL-3.0-or-later — 이 프로젝트도 GPL-3.0-or-later를 따릅니다 (LICENSE).
+
+## 해설 추가하기
+
+`public/explanations.json`은 퍼즐 ID → 한국어 해설 문장입니다. 현재 #1~#60 (2026-09-28 ~ 2026-11-26) 퍼즐에 해설이 있고, 없는 퍼즐은 자동 수순 설명만 표시됩니다.
+
+```bash
+node scripts/puzzle-facts.ts 61 90 --missing   # 해설이 없는 퍼즐의 정확한 사실(보드, 수순, 잡은 기물, 체크)을 출력
+```
+
+출력을 근거로 해설을 작성해 `explanations.json`에 추가하세요. 해설 문장은 Claude Code로 작성했으며, "유일한 수" 같은 주장은 chessops로 검증했습니다.
