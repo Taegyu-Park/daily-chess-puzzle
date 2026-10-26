@@ -41,6 +41,17 @@ const THEME_NAMES: Record<string, string> = {
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
+// Puzzle ratings run 1000–2400 (see scripts/build-puzzles.mjs); 300-point bands
+const DIFFICULTIES: [number, string][] = [
+  [1300, '매우 쉬움'],
+  [1600, '쉬움'],
+  [1900, '중간'],
+  [2200, '어려움'],
+  [Infinity, '매우 어려움'],
+];
+
+const difficulty = (rating: number) => DIFFICULTIES.find(([max]) => rating < max)![1];
+
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `
   <header class="top">
@@ -225,7 +236,9 @@ function renderResult() {
 }
 
 function renderInfo() {
-  $('rating').textContent = String(puzzle.data.rating);
+  const rating = $('rating');
+  rating.textContent = difficulty(puzzle.data.rating);
+  rating.title = `레이팅 ${puzzle.data.rating}`;
   $('attempt').textContent = `실수 ${record.mistakes} · 힌트 ${record.hints}`;
   // Themes give away the idea, so only show them once the puzzle is over
   $('themes').innerHTML =
